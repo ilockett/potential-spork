@@ -1,0 +1,6 @@
+framework module ILTestFramework {
+  umbrella header "ILTestFramework.h"
+
+  export *
+  module * { export * }
+}

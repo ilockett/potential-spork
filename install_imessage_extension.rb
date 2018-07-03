@@ -1,44 +1,97 @@
 #!/usr/bin/env ruby
-require "xcodeproj"
-require "json"
-require "set"
+require 'xcodeproj'
+require 'json'
+require 'set'
 
-
-# Get project directory path
-puts 'start'
+# Get project directory path from first argument and construct main project path
 project_dir = ARGV[0]
-project_search =  project_dir + '*.xcodeproj'
+project_search = project_dir + '*.xcodeproj'
 file = Dir[project_search].first
-puts file
-puts 'end'
 
- # path_to_project = "${SRCROOT}/${PROJECT_NAME}.xcodeproj"
- project = Xcodeproj::Project.open(file)
-#
-# # project_path="./platforms/ios/Huggg.xcodeproj"
-# # project = Xcodeproj::Project.open(project_path)
-#
-targets = [];
+# Open project
+project = Xcodeproj::Project.open(file)
 
+# Check targets to see if ours already exists
+targets = []
 project.targets.each do |target|
-    targets.push(target.product_type)
+  targets.push(target.product_type)
+end
+if targets.uniq.length != targets.length
+  puts 'IL iMessage extension target already exists - exiting'
+  return
 end
 
-if targets.uniq.length != targets.length
-    puts "iMessage project already exists"
-    return
+# Get reference to the main app target
+app_target = project.targets.find { |t| t.product_type == 'com.apple.product-type.application' }
+
+# Create a new target for the iMessage extension
+target = project.new_target(:messages_extension, 'ILiMessage', :ios, '11.0')
+
+target.build_configurations.each do |configuration|
+  # Find the matching app configuration and its bundle identifier.
+  app_config = app_target.build_configurations.find { |bc| bc.name == configuration.name }
+  app_bundle_id = app_config.build_settings['PRODUCT_BUNDLE_IDENTIFIER']
+
+  # Update the new target.
+  configuration.build_settings['PRODUCT_NAME'] = 'ILiMessage'
+  configuration.build_settings['INFOPLIST_FILE'] = Dir.pwd + '/Info.plist'
+  configuration.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = app_bundle_id + '.iMessage'
+  configuration.build_settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'iMessage App Icon'
+  configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '10.0'
+  configuration.build_settings['FRAMEWORK_SEARCH_PATHS'] = Dir.pwd
+  configuration.build_settings['LD_RUNPATH_SEARCH_PATHS'] = ['$(inherited)','@executable_path/Frameworks','@executable_path/../../Frameworks']
 end
-#
-target = project.new_target(:messages_extension, 'Huggg Imessage', :ios, "10.0")
-#
-# target.build_configurations.each do |configuration|
-#     configuration.build_settings['SWIFT_VERSION'] = '4.1'
-#     configuration.build_settings['PRODUCT_NAME'] = "Huggg iMessage";
-#     configuration.build_settings['INFOPLIST_FILE'] = 'Huggg iMessage/Info.plist'
-#     configuration.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = config['IMESSAGE_BUNDLE_ID']
-#     configuration.build_settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'iMessage App Icon'
-#     configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '10.2'
-# end
+
+# Create a group for our extension files
+extension_group = project.new_group('ILiMessage')
+
+# Add the files to the group and compile sources build phase
+extension_dir = Dir[Dir.pwd + '/Sources/*']
+
+
+
+extension_dir.each do |filename|
+
+puts filename
+
+    if !File.directory?(filename)
+        file = extension_group.new_file(filename)
+        target.source_build_phase.add_file_reference(file)
+    end
+end
+
+# Reference the project frameworks group and our iMessage target frameworks build phase
+framework_group = project.frameworks_group
+framework_build_phase = target.frameworks_build_phase
+
+# Add each framework to the group and build phase.
+def fileRefForFramework(path, framework_group)
+  file_ref = framework_group.new_reference(path)
+  file_ref.source_tree = 'SOURCE_ROOT'
+  return file_ref
+end
+
+custom_framework_ref = fileRefForFramework(Dir.pwd + '/ILTestFramework.framework', framework_group)
+messages_framework_ref = fileRefForFramework('System/Library/Frameworks/Messages.framework', framework_group)
+framework_build_phase.add_file_reference(custom_framework_ref)
+framework_build_phase.add_file_reference(messages_framework_ref)
+
+# Add the extension as a dependency of the main app.
+embed_extensions_phase = app_target.new_copy_files_build_phase('Copy files')
+embed_extensions_phase.symbol_dst_subfolder_spec = :plug_ins
+embed_extensions_phase.add_file_reference(target.product_reference)
+app_target.add_dependency(target);
+
+# Add an 'embed frameworks' build phase to ensure our framework is copied into bundle
+embed_frameworks_build_phase = target.new_copy_files_build_phase('Embed Frameworks')
+embed_frameworks_build_phase.symbol_dst_subfolder_spec = :frameworks
+build_file = embed_frameworks_build_phase.add_file_reference(custom_framework_ref)
+build_file.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy'] }
+
+puts 'saving'
+
+project.save
+
 # #
 # # build_phase = target.frameworks_build_phase
 # #
@@ -48,59 +101,3 @@ target = project.new_target(:messages_extension, 'Huggg Imessage', :ios, "10.0")
 # #
 # # group = project.new_group('Huggg Imessage')
 # #
-# # # @todo make this less vague if it errors
-# # FileUtils.cp_r Dir.pwd + '/submodules/huggg-imessage/src/', Dir.pwd + '/platforms/ios/Huggg Imessage'
-# # my_dir = Dir[Dir.pwd + "/platforms/ios/Huggg Imessage/**/*.swift"]
-# #
-# # my_dir.each do |filename|
-# #     puts filename
-# #     if !File.directory?(filename)
-# #         file = group.new_file(filename)
-# #         target.source_build_phase.add_file_reference(file)
-# #     end
-# # end
-# #
-# # assets = group.new_file(Dir.pwd + "/platforms/ios/Huggg Imessage/Resources/Assets.xcassets")
-# # storyboard = group.new_file(Dir.pwd + "/platforms/ios/Huggg Imessage/Resources/MainInterface.storyboard")
-# #     target.add_resources([assets, storyboard])
-# #
-# # my_dir = Dir[Dir.pwd + "/platforms/ios/Huggg Imessage/Resources/UI/*",
-# #              Dir.pwd + "/platforms/ios/Huggg Imessage/Resources/Fonts/*",
-# #              Dir.pwd + "/ios/Huggg Imessage/Resources/*"]
-# #
-# # my_dir.each do |filename|
-# #     file = group.new_file(filename)
-# #     target.add_resources([file])
-# # end
-# #
-# # #Add Messages Framework
-# # framework_group = project.frameworks_group
-# # path = "System/Library/Frameworks/Messages.framework"
-# # file_ref = framework_group.new_reference(path)
-# # file_ref.name = "Messages.framework"
-# # file_ref.source_tree = 'SDKROOT'
-# # build_file = build_phase.add_file_reference(file_ref)
-# #
-# # project.save();
-# #
-# # message_reference = project.targets.find { |t| t.product_type == 'com.apple.product-type.app-extension.messages'}
-# # app_reference     = project.targets.find { |t| t.product_type == 'com.apple.product-type.application'}
-# #
-# # embed_extensions_phase = app_reference.new_copy_files_build_phase('Copy files')
-# # embed_extensions_phase.symbol_dst_subfolder_spec = :plug_ins
-# #
-# #
-# # embed_extensions_phase.add_file_reference(message_reference.product_reference)
-# # app_reference.add_dependency(message_reference);
-# #
-# #
-# # # Team
-# # project.targets.each do |target|
-# #     uuid = target && target.uuid
-# #     target_atts_obj = project.root_object.attributes['TargetAttributes']
-# # end
-#
-#
-# puts "Added Huggg IMessage To Cordova Project"
-#
-project.save();
