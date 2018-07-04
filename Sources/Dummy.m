@@ -6,8 +6,10 @@
 //  Copyright © 2018 Ian Lockett. All rights reserved.
 //
 
-#import "Dummy.h"
+#import <Foundation/Foundation.h>
+
+@interface Dummy: NSObject
+@end
 
 @implementation Dummy
-
 @end
