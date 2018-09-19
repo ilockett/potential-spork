@@ -88,7 +88,7 @@ def fileRefForFramework(path, framework_group)
   file_ref
 end
 
-custom_framework_ref = fileRefForFramework(__dir__ + '/ILTestFramework.framework', framework_group)
+custom_framework_ref = fileRefForFramework(__dir__ + '/greenfairy.framework', framework_group)
 messages_framework_ref = fileRefForFramework('System/Library/Frameworks/Messages.framework', framework_group)
 framework_build_phase.add_file_reference(custom_framework_ref)
 framework_build_phase.add_file_reference(messages_framework_ref)

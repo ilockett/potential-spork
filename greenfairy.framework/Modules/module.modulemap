@@ -1,0 +1,6 @@
+framework module greenfairy {
+  umbrella header "greenfairy.h"
+
+  export *
+  module * { export * }
+}
